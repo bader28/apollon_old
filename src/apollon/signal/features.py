@@ -1,21 +1,22 @@
 """apollon/signal/features.py -- Feature extraction routines
+j
 Licensed under the terms of the BSD-3-Clause license.
 Copyright (C) 2019 Michael Blaß
 mblass@posteo.net
 
 Functions:
-    cdim           Fractal correlation dimension.
-    correlogram    Windowed auto-correlation.
-    energy    Total signal energy.
-    rms    Root mean square.
+    cdim            Fractal correlation dimension.
+    correlogram     Windowed auto-correlation.
+    energy          Total signal energy.
+    rms             Root mean square.
     spectral_centroid
     spectral_spread
     spectral_flux
-    spl
+    spl             Sound preassure level.
     splc
-    loudness
-    sharpness
-    roughness
+    loudness        Estimate of perceived loudness.
+    roughness       Estimate of perceived roughness.
+    sharpness       Estimate of perceived sharpness.
 """
 
 import numpy as _np
@@ -118,8 +119,20 @@ def energy(sig: _Array) -> _Array:
     return _np.sum(_np.square(_np.abs(sig)), axis=0, keepdims=True)
 
 
+def rms(sig: _Array) -> _Array:
+    """Root mean square of time domain signal.
+
+    Args:
+        sig:  Time domain signal
+
+    Returns:
+        RMS of signal along first axis.
+    """
+    return _np.sqrt(_np.mean(_np.square(_np.abs(sig)), axis=0, keepdims=True))
+
+
 def frms(bins: _Array, n_sig: int, window: str = None) -> _Array:
-    """Root meann square of signal energy estimate in the specrtal domain.
+    """Root meann square of signal energy estimated in the spectral domain.
 
     Args:
         bins:    DFT bins.
@@ -140,18 +153,6 @@ def frms(bins: _Array, n_sig: int, window: str = None) -> _Array:
     return rms_
 
 
-def rms(sig: _Array) -> _Array:
-    """Root mean square of time domain signal.
-
-    Args:
-        sig:  Time domain signal
-
-    Returns:
-        RMS of signal along first axis.
-    """
-    return _np.sqrt(_np.mean(_np.square(_np.abs(sig)), axis=0, keepdims=True))
-
-
 def spectral_centroid(frqs: _Array, bins: _Array) -> _Array:
     """Estimate the spectral centroid frequency.
 
@@ -167,16 +168,17 @@ def spectral_centroid(frqs: _Array, bins: _Array) -> _Array:
     return tools.fsum(frqs*_power_distr(bins), axis=0, keepdims=True)
 
 
-def spectral_flux(inp: _Array, delta: float = 1.0, total: bool = True
-        ) -> _Array:
+def spectral_flux(inp: _Array, delta: float = 1.0,
+                  total: bool = True) -> _Array:
     """Estimate the spectral flux
 
     Args:
         inp:      Input data. Each row is assumend FFT bins.
         delta:    Sample spacing.
+        total:    If ``True`` sum flux per bin.
 
     Returns:
-        Array of Spectral flux.
+        Two-dimensional array of Spectral Flux.
     """
     inp = _np.atleast_2d(inp).astype('float64')
     out = _np.maximum(_np.gradient(inp, delta, axis=-1), 0)
@@ -185,15 +187,16 @@ def spectral_flux(inp: _Array, delta: float = 1.0, total: bool = True
     return out
 
 
-def spectral_spread(frqs: _Array, bins: _Array, centroids: _Array=None) -> _Array:
+def spectral_spread(frqs: _Array, bins: _Array,
+                    centroids: _Array=None) -> _Array:
     """Estimate spectral spread.
 
     Spectral spread is always computed along the second axis of ``bins``.
     This function computes the square roote of spectral spread.
 
     Args:
-        frqs:     Nx1 array of DFT frequencies.
-        power:    NxM array of DFT bin values.
+        frqs:       Nx1 array of DFT frequencies.
+        power:      NxM array of DFT bin values.
         centroids:  Array Spectral Centroid values.
 
     Returns:
@@ -206,8 +209,23 @@ def spectral_spread(frqs: _Array, bins: _Array, centroids: _Array=None) -> _Arra
                                keepdims=True))
 
 
-def fspl(amps: _Array, total: bool = False, ref: float = None) -> _Array:
-    """Computes sound pressure level from spectrum.
+def spl(sig: _Array, ref: float = _defaults.SPL_REF):
+    """Computes the average sound pressure level of time domain signal.
+
+    Args:
+        sig:  Time domain signal.
+        ref:  Reference preassure in Pascal.
+
+    Returns:
+        Average sound pressure level.
+    """
+    level = rms(sig)/ref
+    return 20 * _np.log10(level, where=level>0)
+
+
+def spl_f(amps: _Array, total: bool = False,
+          ref: float = _defaults.SPL_REF) -> _Array:
+    """Sound preassure level estimated in spectral domain.
 
     The values of ``amp`` are assumed to be magnitudes of DFT bins.
 
@@ -217,14 +235,11 @@ def fspl(amps: _Array, total: bool = False, ref: float = None) -> _Array:
         amps:     Amplitude values.
         total:    If True, returns the total spl over all values. In case
                   ``amp`` is two-dimensional, the first axis is aggregated.
-        ref:      Custom reference value.
+        ref:      Reference preassure in Pascal.
 
     Returns:
         Sound pressure level of ``amp``.
     """
-    if ref is None:
-        ref = _defaults.SPL_REF
-
     vals = _np.power(amps/ref, 2)
     if total:
         vals = vals.sum(axis=0, keepdims=True)
@@ -233,31 +248,19 @@ def fspl(amps: _Array, total: bool = False, ref: float = None) -> _Array:
 
 
 def fsplc(frqs: _Array, amps: _Array, total: bool = False,
-         ref: float = None) -> _Array:
+          ref: float = _defaults.SPL_REF) -> _Array:
     """Apply C-weighted to SPL.
 
     Args:
         frqs:    Center frequency of DFT band.
         amps:    Magnitude of DFT band.
-        ref:     Reference value for p_0.
+        ref:     Reference preassure in Pascal.
 
     Returns:
         C-weighted sound pressure level.
     """
     return spl(_sigtools.c_weighting(frqs)*amps, total, ref)
 
-def spl(inp: _Array, ref=_defaults.SPL_REF):
-    """Computes the average sound pressure level of time domain signal.
-
-    Args:
-        inp:  Time domain signal.
-        ref:  Reference level.
-
-    Returns:
-        Average sound pressure level.
-    """
-    level = rms(inp)/ref
-    return 20 * _np.log10(level, where=level>0)
 
 def log_attack_time(inp: _Array, fps: int, ons_idx: _Array,
                     wlen: float = 0.05) -> _Array:
