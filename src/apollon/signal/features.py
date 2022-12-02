@@ -8,6 +8,7 @@ Audio feature extraction routines.
 
 import numpy as _np
 from scipy.signal import hilbert as _hilbert
+from scipy.signal import correlate as SPcorrelate
 from typing import Optional
 
 import _features
@@ -397,10 +398,18 @@ def loudness(frqs: _Array, bins: _Array) -> _Array:
 
 def roughness_helmholtz(d_frq: float, bins: _Array, frq_max: float,
                         total: bool = True) -> _Array:
+    
     kernel = _roughnes_kernel(d_frq, frq_max)
     out = _np.empty((kernel.size, bins.shape[1]))
     for i, bin_slice in enumerate(bins.T):
-        out[:, i] = _np.correlate(bin_slice, kernel, mode='same')
+        bin_slice=bin_slice[:kernel.size]
+        bin_slice[bin_slice<0.1]=0
+        bin_slice=bin_slice/max(bin_slice)
+        out_T = SPcorrelate(bin_slice, bin_slice, mode='full')
+        out_T=out_T[int(len(out_T)/2):]
+        out_T[0]=0
+        out_T=out_T/max(out_T)
+        out[:, i]=out_T*kernel/sum(out_T>0.2)
 
     if total is True:
         out = out.sum(axis=0, keepdims=True)
@@ -437,7 +446,7 @@ def _power_distr(bins: _Array) -> _Array:
 
 
 def _roughnes_kernel(frq_res: float, frq_max: float) -> _Array:
-    """Comput the convolution kernel for roughness computation.
+    """Comput the weights of the convolution of roughness computation.
 
     Args:
         frq_res:    Frequency resolution
@@ -446,8 +455,8 @@ def _roughnes_kernel(frq_res: float, frq_max: float) -> _Array:
     Returns:
         Weight for each frequency below ``frq_max``.
     """
-    frm = 33.5
+    frm = 33
     bin_idx = int(_np.round(frq_max/frq_res))
     norm = frm * _np.exp(-1)
-    base = _np.abs(_np.arange(-bin_idx, bin_idx+1)) * frq_res
+    base = _np.abs(_np.arange(bin_idx+1)) * frq_res
     return base / norm * _np.exp(-base/frm)
