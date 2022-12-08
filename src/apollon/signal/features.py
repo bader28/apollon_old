@@ -403,13 +403,17 @@ def roughness_helmholtz(d_frq: float, bins: _Array, frq_max: float,
     out = _np.empty((kernel.size, bins.shape[1]))
     for i, bin_slice in enumerate(bins.T):
         bin_slice=bin_slice[:kernel.size]
+        if max(bin_slice)>0:
+            bin_slice=bin_slice/max(bin_slice)
         bin_slice[bin_slice<0.1]=0
-        bin_slice=bin_slice/max(bin_slice)
         out_T = SPcorrelate(bin_slice, bin_slice, mode='full')
         out_T=out_T[int(len(out_T)/2):]
         out_T[0]=0
-        out_T=out_T/max(out_T)
-        out[:, i]=out_T*kernel/sum(out_T>0.2)
+        if max(out_T)>0:
+            out_T=out_T/max(out_T)
+            out[:, i]=out_T*kernel/sum(out_T>0.2)
+        else:
+            out[:, i]=out_T*kernel
 
     if total is True:
         out = out.sum(axis=0, keepdims=True)
